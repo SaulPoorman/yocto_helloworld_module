@@ -1,139 +1,154 @@
-# README for Yocto Hello World Project
+# Yocto Hello World Module
 
-## **Introduction**
+For adding a new layer/recipe in Yocto, you can refer to the detailed guide available at:
 
-This README provides step-by-step instructions on how to set up your environment, build a simple Hello World application using the Yocto Project, and execute it. It covers creating a new layer, adding it to your build configuration, preparing necessary files for your application, and building an image that includes your application.
+"For more details on adding a new layer or recipe, please refer to the comprehensive guide available at: https://saulpoorman.blogspot.com/2024/03/yocto-hello-world-project.html"
 
-## **Environment Setup**
-
-To prepare your environment, follow these steps:
-
-1. Navigate to your Yocto Project directory:
-    
-    ```bash
-    cd path/poky
-    ```
-    
-2. Source the environment setup script to create a build environment. This step also specifies the location (**`../build`**) where the environment variables and images will be stored:
-    
-    ```bash
-    source oe-init-build-env ../build    
-    ```
-    
-3. Create a new layer for your application:
-    
-    ```bash
-    bitbake-layers create-layer ../meta-helloworld
-    ```
-    
-4. Add the newly created layer to your build configuration:
-    
-    ```bash
-    bitbake-layers add-layer ../meta-helloworld
-    ```
-    
+---
 
 ## **Directory Structure**
 
-Your new layer's directory structure should look like this:
+The following example demonstrates adding a new **`hellomod`** recipe directly under the **`recipes-hello`** layer:
 
-```markdown
-markdownCopy code
-meta-helloworld
+```bash
+user@user-Standard-PC-Q35-ICH9-2009:~/yocto_101/meta-helloworld$ tree
+.
 ├── conf
 │   └── layer.conf
 ├── COPYING.MIT
-├── README
+├── README.MD
 └── recipes-hello
-    └── hello
+    ├── hello
+    │   ├── files
+    │   │   └── helloworld.c
+    │   └── hello_0.1.bb
+    └── hellomod
         ├── files
-        │   └── helloworld.c
-        └── hello_0.1.bb
+        │   ├── hellomod.c
+        │   └── Makefile
+        └── hellomod_0.1.bb
 ```
 
-## **Preparing the Hello World Application**
+---
 
-### **The `helloworld.c` File**
-
-Create a **`helloworld.c`** file in the **`recipes-hello/hello/files`** directory with the following content:
-
-```c
-#include <stdio.h>int main() {
-    printf("Hello, World!\n");
-    return 0;
-}
-```
-
-### **The `hello_0.1.bb` Recipe**
-
-Create a BitBake recipe named **`hello_0.1.bb`** in the **`recipes-hello/hello`** directory. This recipe defines how to build and install your Hello World application:
+## **hellomod_0.1.bb Recipe**
 
 ```bash
-SUMMARY = "Simple Hello World application"
+SUMMARY = "Simple Hello Module application"
 SECTION = "examples"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI = "file://helloworld.c"
+inherit module
 
-TARGET_CC_ARCH += "${LDFLAGS}"
+SRC_URI = "file://Makefile \
+           file://hellomod.c \
+          "
 
 S = "${WORKDIR}"
 
-do_compile() {
-    ${CC} helloworld.c -o helloworld
-}
+# The inherit of module.bbclass will automatically name module packages with
+# "kernel-module-" prefix as required by the oe-core build environment.
 
-do_install() {
-    install -d ${D}${bindir}
-    install -m 0755 helloworld ${D}${bindir}
-}
+RPROVIDES_${PN} += "kernel-module-hello"
 ```
 
-## **Configuring the Build**
+---
 
-To include the Hello World application in your image, add the following line to the **`build/conf/local.conf`** file:
+## **hellomod.c Source File**
 
 ```bash
-IMAGE_INSTALL_append = " hello"
+#include <linux/module.h>
+#include <linux/init.h>
+
+/* Meta Information */
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Saul Poorman");
+MODULE_DESCRIPTION("A hello world LKM");
+
+/**
+ * @brief This function is called when the module is loaded into the kernel.
+ */
+static int __init my_init(void) {
+	printk("Hello, Kernel!\n");
+	return 0;
+}
+
+/**
+ * @brief This function is called when the module is removed from the kernel.
+ */
+static void __exit my_exit(void) {
+	printk("Goodbye, Kernel\n");
+}
+
+module_init(my_init);
+module_exit(my_exit);
 ```
 
-## **Building the Image**
+---
 
-Run the following commands to build your application and the core image:
+## **Makefile**
 
 ```bash
-bitbake hello
+obj-m := hellomod.o
+
+SRC := $(shell pwd)
+
+all:
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC)
+
+modules_install:
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) modules_install
+
+clean:
+	rm -f *.o *~ core .depend .*.cmd *.ko *.mod.c
+	rm -f Module.markers Module.symvers modules.order
+	rm -rf .tmp_versions Modules.symvers
+```
+
+---
+
+## **Build Commands**
+
+```bash
+bitbake hellomod
 bitbake core-image-minimal
 ```
 
-## **Execution**
+---
 
-After building, run the Hello World application. Ensure the **`helloworld`** executable is present in the **`/usr/bin`** directory of your target device or emulator:
-
-```bash
-./helloworld
-
-Output:
-    Hello, World!
-```
-
-## **Notes**
-
-- **COMMON_LICENSE_DIR**: Directory storing common license files, used for verifying package licenses.
-    - Example path: **`path/poky/meta/files/common-licenses`**
-- **LDFLAGS**: Linker flags, used to control how code and libraries are linked together.
-- **WORKDIR**: Temporary working directory where source code is compiled and processed.
-- **CC**: Command for the C compiler, such as **`gcc`**, used to compile C programs.
-- **bindir**: Target system directory where binary files (executables) should be installed, usually **`/usr/bin`** or **`/bin`**.
-
-## **Additional Information**
-
-The MD5 checksum for the MIT license file can be obtained as follows:
+## **Append Extra Dependencies**
 
 ```bash
-cd path/poky/meta/files/common-licenses
-md5sum MIT
+# in path/build/conf/local.conf
+MACHINE_ESSENTIAL_EXTRA_RDEPENDS += "kernel-module-hello"
 ```
 
-This checksum is used in the **`LIC_FILES_CHKSUM`** field of the BitBake recipe to verify the license file.
+---
+
+## **Checking the .ko File in the Root Filesystem**
+
+```bash
+user@:path/build/tmp/work/qemux86_64-poky-linux/core-image-minimal/1.0-r0/rootfs/lib/modules/5.10.107-yocto-standard/extra$ ls
+hellomod.ko
+```
+
+---
+
+## **Running the Emulator**
+
+```bash
+runqemu
+```
+
+---
+
+## **Installing the Driver**
+
+```bash
+modprobe hellomod
+```
+
+
+## Result
+![!\[alt text\](pictures/image.png)](pictures/hellomod_result.png)
